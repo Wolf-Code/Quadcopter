@@ -12,7 +12,7 @@
 #define Pin_RL A2
 #define Pin_RR A3
 
-#define CE_PIN   9
+#define CE_PIN  9
 #define CSN_PIN 10
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
@@ -20,7 +20,6 @@
 #include <I2Cdev.h>
 
 #include <MPU6050_6Axis_MotionApps20.h>
-//#include "MPU6050.h" // not necessary if using MotionApps include file
 
 // Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
 // is used in I2Cdev.h
@@ -28,11 +27,6 @@
 #include <Wire.h>
 #endif
 
-/*
-Coded by Marjan Olesch
-Sketch from Insctructables.com
-Open source - do what you want with this code!
-*/
 #include "Propeller.h"
 #include "Gyroscope.h"
 
@@ -67,7 +61,8 @@ RF24 Radio( CE_PIN, CSN_PIN );
 const uint64_t pipe = 0xE8E8F0F0E1LL; // Define the transmit pipe
 
 // [ 1, 2 ] [ 3, 4 ] = Left stick, right stick.
-int Joystick[ 4 ];
+byte Joystick[ 4 ];
+float Joystick_Float[ 4 ];
 
 #define Divider_Correction 5.0
 
@@ -91,23 +86,23 @@ void loop( )
 {
 	HandleRadio( );
 	SetGyroValues( );
-	UpdatePIDs( );	
-
-	delay( 5 );
+	UpdatePIDs( );
 }
 
 void UpdateThrottles( void )
 {
-	float Front = constrain( Throttle_Pitch_Forward - Throttle_Pitch_Backwards, 0, 1 );
-	float Rear = constrain( Throttle_Pitch_Backwards - Throttle_Pitch_Forward, 0, 1 );
+	float Front = Throttle_Pitch_Forward - Throttle_Pitch_Backwards;
+	float Rear = Throttle_Pitch_Backwards - Throttle_Pitch_Forward;
 
-	float Left = constrain( Throttle_Roll_Forward - Throttle_Roll_Backwards, 0, 1 );
-	float Right = constrain( Throttle_Roll_Backwards - Throttle_Roll_Forward, 0, 1 );
+	float Left = Throttle_Roll_Forward - Throttle_Roll_Backwards;
+	float Right = Throttle_Roll_Backwards - Throttle_Roll_Forward;
 
-	float tFL = ( Front + Left ) / Divider_Correction;
-	float tFR = ( Front + Right ) / Divider_Correction;
-	float tRL = ( Rear + Left ) / Divider_Correction;
-	float tRR = ( Rear + Right ) / Divider_Correction;
+	float Throttle = Joystick_Float[ 1 ];
+
+	float tFL = constrain( Throttle + ( Front + Left ) / Divider_Correction, 0, 1 );
+	float tFR = constrain( Throttle + ( Front + Right ) / Divider_Correction, 0, 1 );
+	float tRL = constrain( Throttle + ( Rear + Left ) / Divider_Correction, 0, 1 );
+	float tRR = constrain( Throttle + ( Rear + Right ) / Divider_Correction, 0, 1 );
 
 	FL.SetThrottle( byte( tFL * 255 ) );
 	FR.SetThrottle( byte( tFR * 255 ) );
@@ -122,6 +117,7 @@ void UpdateThrottles( void )
 	Serial.println( byte( tRL * 255 ) );
 	Serial.print( "RR: " );
 	Serial.println( byte( tRR * 255 ) );
+	Serial.println( );
 }
 
 void UpdatePIDs( )
@@ -131,16 +127,7 @@ void UpdatePIDs( )
 		Change = PIDs[ Q ].Compute( ) || Change;
 
 	if ( Change )
-	{ /*
-		Serial.print( "PID: " );
-		Serial.print( Throttle_Roll_Forward );
-		Serial.print( ", Reverse: " );
-		Serial.println( Throttle_Roll_Backwards );
-		Serial.print( "Roll: " );
-		Serial.println( Roll );*/
-
 		UpdateThrottles( );
-	}
 }
 
 void HandleRadio( void )
@@ -150,22 +137,24 @@ void HandleRadio( void )
 
 	// Fetch the data payload
 	Radio.read( Joystick, sizeof( Joystick ) );
+	for ( int Q = 0; Q < 4; Q++ )
+		Joystick_Float[ Q ] = float( Joystick[ Q ] / 255.0 );
+
 	Serial.print( "X = " );
-	Serial.print( Joystick[ 0 ] );
+	Serial.print( Joystick_Float[ 0 ] );
 	Serial.print( " Y = " );
-	Serial.println( Joystick[ 1 ] );
+	Serial.println( Joystick_Float[ 1 ] );
 
 	Serial.print( "X2 = " );
-	Serial.print( Joystick[ 3 ] );
+	Serial.print( Joystick_Float[ 3 ] );
 	Serial.print( " Y2 = " );
-	Serial.println( Joystick[ 4 ] );
+	Serial.println( Joystick_Float[ 4 ] );
 }
 
 void SetGyroValues( void )
 {
 	Gyro->Loop( );
 
-	//f_YPR = Gyro->GetYawPitchRoll( );
 	Yaw = double( Gyro->GetYaw( ) );
 	Pitch = double( Gyro->GetPitch( ) );
 	Roll = double( Gyro->GetRoll( ) );
