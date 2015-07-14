@@ -18,11 +18,17 @@ Gyroscope::Gyroscope( bool AddressHigh = false ) : mpu( AddressHigh ? 0x69 : 0x6
 		Fastwire::setup( 400, true );
 	#endif
 	
+#ifdef DEBUG
 	Serial.println( "Passed #if" );
+#endif
 	mpu.initialize( );
+#ifdef DEBUG
 	Serial.println( "Passed mpu initialize" );
+#endif
 	devStatus = mpu.dmpInitialize( );
+#ifdef DEBUG
 	Serial.println( "Passed devstatus" );
+#endif
 
 	// supply your own gyro offsets here, scaled for min sensitivity
 	mpu.setXGyroOffset( 0 );
@@ -30,7 +36,9 @@ Gyroscope::Gyroscope( bool AddressHigh = false ) : mpu( AddressHigh ? 0x69 : 0x6
 	mpu.setZGyroOffset( 0 );
 	mpu.setZAccelOffset( 1688 ); // 1688 factory default for my test chip
 
+#ifdef DEBUG
 	Serial.println( "Passed offsets" );
+#endif
 	// make sure it worked (returns 0 if so)
 	if ( devStatus == 0 )
 	{
@@ -129,7 +137,9 @@ void Gyroscope::Loop( void )
 	{
 		// reset so we can continue cleanly
 		mpu.resetFIFO( );
+#ifdef DEBUG
 		Serial.println( F( "FIFO overflow!" ) );
+#endif
 
 		// otherwise, check for DMP data ready interrupt (this should happen frequently)
 	}

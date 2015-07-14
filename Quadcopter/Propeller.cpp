@@ -1,6 +1,6 @@
 #include "Propeller.h"
-#define Prop_Min 1000
-#define Prop_Max 2000
+#define Prop_Min 850
+#define Prop_Max 2150
 
 void Propeller::Attach( byte Pin )
 {

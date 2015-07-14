@@ -15,11 +15,11 @@ http://arduino-info.wikispaces.com/Nrf24L01-2.4GHz-HowTo
 #include <nRF24L01.h>
 #include <RF24.h>
 
-#define X_Left A4
-#define Y_Left A6
+#define X_Left A3
+#define Y_Left A2
 
-#define X_Right A5
-#define Y_Right A7
+#define X_Right A1
+#define Y_Right A0
 
 #define CE_PIN  9
 #define CSN_PIN 10
@@ -35,16 +35,20 @@ byte joystick[ 4 ];  // 2 element array holding Joystick readings
 void setup()
 {
 	Serial.begin( 115200 );
+	init_Radio( );
 }
 
 void loop( )
 {
+	int Val = pulseIn( Y_Right, HIGH );
+	byte B = byte( map( Val, 902, 2104, 0, 255 ) );
+	
 	joystick[ 0 ] = Left.X( );
 	joystick[ 1 ] = Left.Y( );
 	joystick[ 2 ] = Right.X( );
-	joystick[ 3 ] = Right.Y( );
+	joystick[ 3 ] = B;//Right.Y( );
 
-	radio.write( joystick, sizeof( joystick ) );
+	Serial.println( radio.write( joystick, sizeof( joystick ) ) );
 
 	Serial.print( "Left:\tX=" );
 	Serial.print( Left.X( ) );
@@ -60,5 +64,6 @@ void loop( )
 void init_Radio( void )
 {
 	radio.begin( );
+	//radio.setAutoAck( false );
 	radio.openWritingPipe( pipe );
 }

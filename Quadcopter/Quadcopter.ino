@@ -30,7 +30,7 @@
 #include "Propeller.h"
 #include "Gyroscope.h"
 
-Propeller FL, FR, RL, RR; //Create as much as Servoobject you want. You can controll 2 or more Servos at the same time
+Propeller FL, FR, RL, RR;
 Gyroscope* Gyro;
 
 double Pitch, Yaw, Roll;
@@ -46,7 +46,7 @@ double SetPoint_Pitch = 0;
 double SetPoint_Yaw = 0;
 double SetPoint_Roll = 0;
 
-double consKp = 1, consKi = 0.01, consKd = 0.4;
+double consKp = 0.8, consKi = 0.04, consKd = 0.01;
 PID PID_Pitch( &Pitch, &Throttle_Pitch_Forward, &SetPoint_Pitch, consKp, consKi, consKd, REVERSE );
 PID PID_Pitch_Backwards( &Pitch, &Throttle_Pitch_Backwards, &SetPoint_Pitch, consKp, consKi, consKd, DIRECT );
 
@@ -64,22 +64,52 @@ const uint64_t pipe = 0xE8E8F0F0E1LL; // Define the transmit pipe
 byte Joystick[ 4 ];
 float Joystick_Float[ 4 ];
 
-#define Divider_Correction 5.0
+#define Divider_Correction 2.5
+#define ESC_Max 0.4
+#define ESC_ARM_DELAY 3000
 
+#define DEBUG
+//#define DEBUG_ANGLES
+//#define DEBUG_THROTTLE
+#define DEBUG_JOYSTICKS
+//#define ESC_CALIBRATION
+
+long LastRadioLoss;
+#define RadioLossPeriod 500
 
 void setup( )
 {
+	
+#ifdef DEBUG
 	Serial.begin( 115200 );    // start serial at 9600 baud
-	delay( 3000 );
+	delay( 2000 );
 	Serial.println( "Props" );
+#endif
+
 	init_Propellers( );
+
+#ifdef DEBUG
 	Serial.println( "Radio" );
+#endif
+
 	init_Radio( );
+
+#ifdef DEBUG
 	Serial.println( "PID" );
+#endif
+
 	init_PIDs( );
+
+#ifdef DEBUG
 	Serial.println( "Gyro" );
+#endif
+
 	Gyro = new Gyroscope( false );
+
+#ifdef DEBUG
 	Serial.println( "Done" );
+#endif
+
 }
 
 void loop( )
@@ -91,24 +121,24 @@ void loop( )
 
 void UpdateThrottles( void )
 {
-	float Front = Throttle_Pitch_Forward - Throttle_Pitch_Backwards;
-	float Rear = Throttle_Pitch_Backwards - Throttle_Pitch_Forward;
+	float Front = ( Throttle_Pitch_Forward - Throttle_Pitch_Backwards );
+	float Rear = ( Throttle_Pitch_Backwards - Throttle_Pitch_Forward );
 
-	float Left = Throttle_Roll_Forward - Throttle_Roll_Backwards;
-	float Right = Throttle_Roll_Backwards - Throttle_Roll_Forward;
+	float Left = ( Throttle_Roll_Forward - Throttle_Roll_Backwards );
+	float Right = ( Throttle_Roll_Backwards - Throttle_Roll_Forward );
 
 	float Throttle = Joystick_Float[ 1 ];
 
-	float tFL = constrain( Throttle + ( Front + Left ) / Divider_Correction, 0, 1 );
-	float tFR = constrain( Throttle + ( Front + Right ) / Divider_Correction, 0, 1 );
-	float tRL = constrain( Throttle + ( Rear + Left ) / Divider_Correction, 0, 1 );
-	float tRR = constrain( Throttle + ( Rear + Right ) / Divider_Correction, 0, 1 );
+	float tFL = constrain( Throttle + ( Front + Left ) / Divider_Correction, 0, ESC_Max );
+	float tFR = constrain( Throttle + ( Front + Right ) / Divider_Correction, 0, ESC_Max );
+	float tRL = constrain( Throttle + ( Rear + Left ) / Divider_Correction, 0, ESC_Max );
+	float tRR = constrain( Throttle + ( Rear + Right ) / Divider_Correction, 0, ESC_Max );
 
 	FL.SetThrottle( byte( tFL * 255 ) );
 	FR.SetThrottle( byte( tFR * 255 ) );
 	RL.SetThrottle( byte( tRL * 255 ) );
 	RR.SetThrottle( byte( tRR * 255 ) );
-
+#ifdef DEBUG_THROTTLE
 	Serial.print( "FL: " );
 	Serial.println( byte( tFL * 255 ) );
 	Serial.print( "FR: " );
@@ -118,6 +148,7 @@ void UpdateThrottles( void )
 	Serial.print( "RR: " );
 	Serial.println( byte( tRR * 255 ) );
 	Serial.println( );
+#endif
 }
 
 void UpdatePIDs( )
@@ -132,23 +163,41 @@ void UpdatePIDs( )
 
 void HandleRadio( void )
 {
-	if ( !Radio.available( ) )
+	bool Available = Radio.available( );
+	if ( !Available && millis( ) - LastRadioLoss >= RadioLossPeriod )
+	{
+		for ( int Q = 0; Q < 4; Q++ )
+			Joystick_Float[ Q ] = 0.0;
+#ifdef DEBUG_JOYSTICKS
+		Serial.println( "No radio available." );
+#endif
 		return;
+	}
+
+	while ( Available )
+	{
+		Radio.read( Joystick, sizeof( Joystick ) );
+		for ( int Q = 0; Q < 4; Q++ )
+			Joystick_Float[ Q ] = float( Joystick[ Q ] / 255.0 );
+	
+		Available = Radio.available( );
+		LastRadioLoss = millis( );
+	}
 
 	// Fetch the data payload
-	Radio.read( Joystick, sizeof( Joystick ) );
-	for ( int Q = 0; Q < 4; Q++ )
-		Joystick_Float[ Q ] = float( Joystick[ Q ] / 255.0 );
+	
 
+#ifdef DEBUG_JOYSTICKS
 	Serial.print( "X = " );
 	Serial.print( Joystick_Float[ 0 ] );
 	Serial.print( " Y = " );
 	Serial.println( Joystick_Float[ 1 ] );
 
 	Serial.print( "X2 = " );
-	Serial.print( Joystick_Float[ 3 ] );
+	Serial.print( Joystick_Float[ 2 ] );
 	Serial.print( " Y2 = " );
-	Serial.println( Joystick_Float[ 4 ] );
+	Serial.println( Joystick_Float[ 3 ] );
+#endif
 }
 
 void SetGyroValues( void )
@@ -158,6 +207,36 @@ void SetGyroValues( void )
 	Yaw = double( Gyro->GetYaw( ) );
 	Pitch = double( Gyro->GetPitch( ) );
 	Roll = double( Gyro->GetRoll( ) );
+
+#ifdef DEBUG_ANGLES
+	Serial.print( "Pitch: " );
+	Serial.println( Pitch );
+	Serial.print( "Yaw: " );
+	Serial.println( Yaw );
+	Serial.print( "Roll: " );
+	Serial.println( Roll );
+	Serial.println( );
+#endif
+}
+
+void init_ESCs( void )
+{
+#ifdef ESC_CALIBRATION
+	FL.InitHigh( );
+	FR.InitHigh( );
+	RL.InitHigh( );
+	RR.InitHigh( );
+
+	delay( 3000 );
+#endif
+	//delay( 1000 );
+
+	FL.InitLow( );
+	FR.InitLow( );
+	RL.InitLow( );
+	RR.InitLow( );
+
+	delay( ESC_ARM_DELAY );
 }
 
 void init_PIDs( void )
@@ -165,7 +244,7 @@ void init_PIDs( void )
 	for ( int Q = 0; Q < PIDCount; Q++ )
 	{
 		PIDs[ Q ].SetMode( AUTOMATIC );
-		PIDs[ Q ].SetSampleTime( 100 );
+		PIDs[ Q ].SetSampleTime( 25 );
 		PIDs[ Q ].SetOutputLimits( 0, 255 );
 	}
 }
@@ -183,6 +262,10 @@ void init_Propellers( void )
 	FR.Attach( Pin_FR );
 	RL.Attach( Pin_RL );
 	RR.Attach( Pin_RR );
+
+	delay( 100 );
+
+	init_ESCs( );
 }
 
 void init_Gyro( void )
