@@ -7,14 +7,6 @@
 #include "Arduino.h"
 #include "Servo\Servo.h"
 
-#define Pin_FL A0
-#define Pin_FR A1
-#define Pin_RL A2
-#define Pin_RR A3
-
-#define CE_PIN  9
-#define CSN_PIN 10
-
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
 // for both classes must be in the include path of your project
 #include <I2Cdev.h>
@@ -30,52 +22,80 @@
 #include "Propeller.h"
 #include "Gyroscope.h"
 
-Propeller FL, FR, RL, RR;
-Gyroscope* Gyro;
+#define PI 3.14159
+
+#define Pin_FL A0
+#define Pin_FR A1
+#define Pin_RL A2
+#define Pin_RR A3
+
+#define CE_PIN  9
+#define CSN_PIN 10
 
 double Pitch, Yaw, Roll;
 
-double Throttle_Pitch_Forward;
-double Throttle_Pitch_Backwards;
-double Throttle_Yaw_Forward;
-double Throttle_Yaw_Backwards;
-double Throttle_Roll_Forward;
-double Throttle_Roll_Backwards;
+double Throttle_Pitch;
+double Throttle_Yaw;
+double Throttle_Roll;
 
 double SetPoint_Pitch = 0;
 double SetPoint_Yaw = 0;
 double SetPoint_Roll = 0;
 
-double consKp = 0.8, consKi = 0.04, consKd = 0.01;
-PID PID_Pitch( &Pitch, &Throttle_Pitch_Forward, &SetPoint_Pitch, consKp, consKi, consKd, REVERSE );
-PID PID_Pitch_Backwards( &Pitch, &Throttle_Pitch_Backwards, &SetPoint_Pitch, consKp, consKi, consKd, DIRECT );
+#define PITCH_K 0.6
+#define PITCH_I 0.15
+#define PITCH_D 0.06
 
-PID PID_Roll( &Roll, &Throttle_Roll_Forward, &SetPoint_Roll, consKp, consKi, consKd, REVERSE );
-PID PID_Roll_Backwards( &Roll, &Throttle_Roll_Backwards, &SetPoint_Roll, consKp, consKi, consKd, DIRECT );
+#define ROLL_K 0.4
+#define ROLL_I 0.075
+#define ROLL_D 0.06
 
-#define PIDCount 4
-PID PIDs[ PIDCount ] = { PID_Pitch, PID_Pitch_Backwards, PID_Roll, PID_Roll_Backwards };
+#define YAW_K ROLL_K
+#define YAW_I ROLL_I
+#define YAW_D ROLL_D
+
+#define PITCH_MAX 10
+#define PITCH_MIN -10
+
+#define ROLL_MAX 10
+#define ROLL_MIN -10
+
+#define YAW_MAX 180
+#define YAW_MIN -180
+#define YAW_INFLUENCE 0.1
+
+PID PID_Pitch( &Pitch, &Throttle_Pitch, &SetPoint_Pitch, PITCH_K, PITCH_I, PITCH_D, REVERSE );
+PID PID_Roll( &Roll, &Throttle_Roll, &SetPoint_Roll, ROLL_K, ROLL_I, ROLL_D, REVERSE );
+PID PID_Yaw( &Yaw, &Throttle_Yaw, &SetPoint_Yaw, YAW_K, YAW_D, YAW_I, REVERSE );
+
+#define PIDCount 2
+PID PIDs[ PIDCount ] = { PID_Pitch, PID_Roll };
 
 RF24 Radio( CE_PIN, CSN_PIN );
-// NOTE: the "LL" at the end of the constant is "LongLong" type
-const uint64_t pipe = 0xE8E8F0F0E1LL; // Define the transmit pipe
+#define RADIO_PIPE 0xE8E8F0F0E1LL
 
 // [ 1, 2 ] [ 3, 4 ] = Left stick, right stick.
 byte Joystick[ 4 ];
 float Joystick_Float[ 4 ];
 
-#define Divider_Correction 2.5
-#define ESC_Max 0.4
+#define CORRECTION_MAX 0.25
+#define ESC_MAX 1
 #define ESC_ARM_DELAY 3000
+#define THROTTLE_MIN 0.1
 
-#define DEBUG
+//#define DEBUG
 //#define DEBUG_ANGLES
 //#define DEBUG_THROTTLE
-#define DEBUG_JOYSTICKS
+//#define DEBUG_JOYSTICKS
 //#define ESC_CALIBRATION
 
 long LastRadioLoss;
 #define RadioLossPeriod 500
+
+Propeller FL, FR, RL, RR;
+Propeller Props_CW[ ] = { FR, RL };
+Propeller Props_CCW[ ] = { FL, RR };
+Gyroscope* Gyro;
 
 void setup( )
 {
@@ -121,18 +141,35 @@ void loop( )
 
 void UpdateThrottles( void )
 {
-	float Front = ( Throttle_Pitch_Forward - Throttle_Pitch_Backwards );
-	float Rear = ( Throttle_Pitch_Backwards - Throttle_Pitch_Forward );
+	float Throttle = Joystick_Float[ 3 ];
 
-	float Left = ( Throttle_Roll_Forward - Throttle_Roll_Backwards );
-	float Right = ( Throttle_Roll_Backwards - Throttle_Roll_Forward );
+	if ( Throttle <= THROTTLE_MIN )
+	{
+		FL.SetThrottle( 0 );
+		FR.SetThrottle( 0 );
+		RL.SetThrottle( 0 );
+		RR.SetThrottle( 0 );
+		return;
+	}
 
-	float Throttle = Joystick_Float[ 1 ];
+	float P = Throttle_Pitch;
+#ifdef DEBUG_THROTTLE
+	Serial.println( Throttle_Pitch );
+	Serial.println( Throttle_Roll );
+	Serial.println( Throttle_Yaw );
+#endif
+	float R = Throttle_Roll;
+	float Y = Throttle_Yaw / 255.0;
 
-	float tFL = constrain( Throttle + ( Front + Left ) / Divider_Correction, 0, ESC_Max );
-	float tFR = constrain( Throttle + ( Front + Right ) / Divider_Correction, 0, ESC_Max );
-	float tRL = constrain( Throttle + ( Rear + Left ) / Divider_Correction, 0, ESC_Max );
-	float tRR = constrain( Throttle + ( Rear + Right ) / Divider_Correction, 0, ESC_Max );
+	float tFL = constrain( P + R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
+	float tFR = constrain( P - R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
+	float tRL = constrain( -P + R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
+	float tRR = constrain( -P - R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
+
+	tFL = constrain( tFL + Throttle, 0, ESC_MAX );
+	tFR = constrain( tFR + Throttle, 0, ESC_MAX );
+	tRL = constrain( tRL + Throttle, 0, ESC_MAX );
+	tRR = constrain( tRR + Throttle, 0, ESC_MAX );
 
 	FL.SetThrottle( byte( tFL * 255 ) );
 	FR.SetThrottle( byte( tFR * 255 ) );
@@ -168,6 +205,7 @@ void HandleRadio( void )
 	{
 		for ( int Q = 0; Q < 4; Q++ )
 			Joystick_Float[ Q ] = 0.0;
+
 #ifdef DEBUG_JOYSTICKS
 		Serial.println( "No radio available." );
 #endif
@@ -181,9 +219,9 @@ void HandleRadio( void )
 			Joystick_Float[ Q ] = float( Joystick[ Q ] / 255.0 );
 	
 		Available = Radio.available( );
-		LastRadioLoss = millis( );
 	}
 
+	LastRadioLoss = millis( );
 	// Fetch the data payload
 	
 
@@ -245,14 +283,14 @@ void init_PIDs( void )
 	{
 		PIDs[ Q ].SetMode( AUTOMATIC );
 		PIDs[ Q ].SetSampleTime( 25 );
-		PIDs[ Q ].SetOutputLimits( 0, 255 );
+		PIDs[ Q ].SetOutputLimits( -255, 255 );
 	}
 }
 
 void init_Radio( void )
 {
 	Radio.begin( );
-	Radio.openReadingPipe( 1, pipe );
+	Radio.openReadingPipe( 1, RADIO_PIPE );
 	Radio.startListening( );
 }
 
