@@ -6,23 +6,19 @@
 #include <PID_v1.h>
 #include "Arduino.h"
 #include "Servo\Servo.h"
-
-// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
-// for both classes must be in the include path of your project
 #include <I2Cdev.h>
-
 #include <MPU6050_6Axis_MotionApps20.h>
 
-// Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
-// is used in I2Cdev.h
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-#include <Wire.h>
+	#include <Wire.h>
 #endif
 
 #include "Propeller.h"
 #include "Gyroscope.h"
 
 #define PI 3.14159
+#define RAD2DEG( Rads ) Rads * ( 180.0 / PI )
+#define DEG2RAD( Degs ) ( PI / 180.0 ) * Degs
 
 #define Pin_FL A0
 #define Pin_FR A1
@@ -38,38 +34,39 @@ double Throttle_Pitch;
 double Throttle_Yaw;
 double Throttle_Roll;
 
-double SetPoint_Pitch = 0;
-double SetPoint_Yaw = 0;
-double SetPoint_Roll = 0;
+double SetPoint_Pitch = 0.0;
+double SetPoint_Yaw = 0.0;
+double SetPoint_Roll = 0.0;
 
-#define PITCH_K 0.31
-#define PITCH_I 0
-#define PITCH_D 0.08
+#define PITCH_P 0.275
+#define PITCH_I 0.0
+#define PITCH_D 0.06
 
-#define ROLL_K 0.26
-#define ROLL_I 0
-#define ROLL_D 0.065
+#define ROLL_P 0.2
+#define ROLL_I 0.0
+#define ROLL_D 0.05
 
-#define YAW_K ROLL_K
-#define YAW_I ROLL_I
-#define YAW_D ROLL_D
+#define YAW_P 0.3
+#define YAW_I 0
+#define YAW_D 0
 
-#define PITCH_MAX 10
-#define PITCH_MIN -10
+#define PITCH_MAX DEG2RAD( 10.0 )
+#define PITCH_MIN DEG2RAD( -10.0 )
 
-#define ROLL_MAX 10
-#define ROLL_MIN -10
+#define ROLL_MAX DEG2RAD( 10.0 )
+#define ROLL_MIN DEG2RAD( -10.0 )
 
-#define YAW_MAX 180
-#define YAW_MIN -180
-#define YAW_INFLUENCE 0
 
-PID PID_Pitch( &Pitch, &Throttle_Pitch, &SetPoint_Pitch, PITCH_K, PITCH_I, PITCH_D, REVERSE );
-PID PID_Roll( &Roll, &Throttle_Roll, &SetPoint_Roll, ROLL_K, ROLL_I, ROLL_D, REVERSE );
-PID PID_Yaw( &Yaw, &Throttle_Yaw, &SetPoint_Yaw, YAW_K, YAW_D, YAW_I, REVERSE );
+#define YAW_MAX DEG2RAD( 180.0 )
+#define YAW_MIN DEG2RAD( -180.0 )
+#define YAW_INFLUENCE 2
 
-#define PIDCount 2
-PID PIDs[ PIDCount ] = { PID_Pitch, PID_Roll };
+PID PID_Pitch( &Pitch, &Throttle_Pitch, &SetPoint_Pitch, PITCH_P, PITCH_I, PITCH_D, REVERSE );
+PID PID_Roll( &Roll, &Throttle_Roll, &SetPoint_Roll, ROLL_P, ROLL_I, ROLL_D, REVERSE );
+PID PID_Yaw( &Yaw, &Throttle_Yaw, &SetPoint_Yaw, YAW_P, YAW_I, YAW_D, REVERSE );
+
+#define PIDCount 3
+PID PIDs[ PIDCount ] = { PID_Pitch, PID_Roll, PID_Yaw };
 
 RF24 Radio( CE_PIN, CSN_PIN );
 #define RADIO_PIPE 0xABCDABCD71LL
@@ -78,8 +75,8 @@ RF24 Radio( CE_PIN, CSN_PIN );
 byte Joystick[ 4 ];
 float Joystick_Float[ 4 ];
 
-#define CORRECTION_MAX 0.25
-#define ESC_MAX 1
+#define CORRECTION_MAX 1.0
+#define ESC_MAX 1.0
 #define ESC_ARM_DELAY 3000
 #define THROTTLE_MIN 0.1
 
@@ -157,12 +154,13 @@ void UpdateThrottles( void )
 	float P = Throttle_Pitch;
 #ifdef DEBUG_THROTTLE
 	Serial.println( Throttle_Pitch );
-	Serial.println( Throttle_Roll );
 	Serial.println( Throttle_Yaw );
+	Serial.println( Throttle_Roll );
 #endif
 	float R = Throttle_Roll;
 	float Y = Throttle_Yaw;
 
+	/*
 	tFL = constrain( P + R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
 	tFR = constrain( P - R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
 	tRL = constrain( -P + R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
@@ -172,20 +170,37 @@ void UpdateThrottles( void )
 	tFR = constrain( tFR + Throttle, 0, ESC_MAX );
 	tRL = constrain( tRL + Throttle, 0, ESC_MAX );
 	tRR = constrain( tRR + Throttle, 0, ESC_MAX );
+	*/
 
-	FL.SetThrottle( byte( tFL * 255 ) );
-	FR.SetThrottle( byte( tFR * 255 ) );
-	RL.SetThrottle( byte( tRL * 255 ) );
-	RR.SetThrottle( byte( tRR * 255 ) );
+	float vCW = ( 1.0 - Y * YAW_INFLUENCE ) * Throttle;
+	float vCCW = ( 1.0 + Y * YAW_INFLUENCE ) * Throttle;
+
+#ifdef DEBUG_THROTTLE
+	Serial.print( "CW:\t" );
+	Serial.println( vCW );
+	Serial.print( "CCW:\t" );
+	Serial.println( vCCW );
+#endif
+
+	tFL = ( 1.0 + ( P + R ) ) * vCW;
+	tRR = ( 1.0 + ( -P - R ) ) * vCW;
+
+	tFR = ( 1.0 + ( P - R ) ) * vCCW;
+	tRL = ( 1.0 + ( -P + R ) ) * vCCW;
+
+	FL.SetThrottle( byte( constrain( tFL, 0.0, 1.0 ) * 255 ) );
+	FR.SetThrottle( byte( constrain( tFR, 0.0, 1.0 ) * 255 ) );
+	RL.SetThrottle( byte( constrain( tRL, 0.0, 1.0 ) * 255 ) );
+	RR.SetThrottle( byte( constrain( tRR, 0.0, 1.0 ) * 255 ) );
 #ifdef DEBUG_THROTTLE
 	Serial.print( "FL: " );
-	Serial.println( byte( tFL * 255 ) );
+	Serial.println( byte( constrain( tFL, 0.0, 1.0 ) * 255 ) );
 	Serial.print( "FR: " );
-	Serial.println( byte( tFR * 255 ) );
+	Serial.println( byte( constrain( tFR, 0.0, 1.0 ) * 255 ) );
 	Serial.print( "RL: " );
-	Serial.println( byte( tRL * 255 ) );
+	Serial.println( byte( constrain( tRL, 0.0, 1.0 ) * 255 ) );
 	Serial.print( "RR: " );
-	Serial.println( byte( tRR * 255 ) );
+	Serial.println( byte( constrain( tRR, 0.0, 1.0 ) * 255 ) );
 	Serial.println( );
 #endif
 }
@@ -313,4 +328,9 @@ void init_Propellers( void )
 void init_Gyro( void )
 {
 	SetGyroValues( );
+}
+
+float Rad2Deg( float Rad )
+{
+	return Rad * PI;
 }
