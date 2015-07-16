@@ -25,12 +25,14 @@ http://arduino-info.wikispaces.com/Nrf24L01-2.4GHz-HowTo
 #define CSN_PIN 10
 
 // NOTE: the "LL" at the end of the constant is "LongLong" type
-const uint64_t pipe = 0xE8E8F0F0E1LL; // Define the transmit pipe
+#define RADIO_PIPE 0xABCDABCD71LL // Define the transmit pipe
 
 Joystick Left( X_Left, Y_Left, 6 ), Right( X_Right, Y_Right, 7 );
 
 RF24 radio( CE_PIN, CSN_PIN ); // Create a Radio
 byte joystick[ 4 ];  // 2 element array holding Joystick readings
+
+#define DEBUG
 
 void setup()
 {
@@ -48,9 +50,10 @@ void loop( )
 	joystick[ 2 ] = Right.X( );
 	joystick[ 3 ] = B;//Right.Y( );
 
-	Serial.println( radio.write( joystick, sizeof( joystick ) ) );
+	radio.write( joystick, sizeof( joystick ) );
 
-	Serial.print( "Left:\tX=" );
+#ifdef DEBUG
+	/*Serial.print( "Left:\tX=" );
 	Serial.print( Left.X( ) );
 	Serial.print( ", Y=" );
 	Serial.println( Left.Y( ) );
@@ -58,12 +61,15 @@ void loop( )
 	Serial.print( "Right:\tX=" );
 	Serial.print( Right.X( ) );
 	Serial.print( ", Y=" );
-	Serial.println( Right.Y( ) );
+	Serial.println( Right.Y( ) );*/
+	Serial.println( B );
+#endif
 }
 
 void init_Radio( void )
 {
 	radio.begin( );
+	//radio.enableAckPayload( );
 	//radio.setAutoAck( false );
-	radio.openWritingPipe( pipe );
+	radio.openWritingPipe( RADIO_PIPE );
 }

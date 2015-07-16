@@ -42,13 +42,13 @@ double SetPoint_Pitch = 0;
 double SetPoint_Yaw = 0;
 double SetPoint_Roll = 0;
 
-#define PITCH_K 0.6
-#define PITCH_I 0.15
-#define PITCH_D 0.06
+#define PITCH_K 0.31
+#define PITCH_I 0
+#define PITCH_D 0.08
 
-#define ROLL_K 0.4
-#define ROLL_I 0.075
-#define ROLL_D 0.06
+#define ROLL_K 0.26
+#define ROLL_I 0
+#define ROLL_D 0.065
 
 #define YAW_K ROLL_K
 #define YAW_I ROLL_I
@@ -62,7 +62,7 @@ double SetPoint_Roll = 0;
 
 #define YAW_MAX 180
 #define YAW_MIN -180
-#define YAW_INFLUENCE 0.1
+#define YAW_INFLUENCE 0
 
 PID PID_Pitch( &Pitch, &Throttle_Pitch, &SetPoint_Pitch, PITCH_K, PITCH_I, PITCH_D, REVERSE );
 PID PID_Roll( &Roll, &Throttle_Roll, &SetPoint_Roll, ROLL_K, ROLL_I, ROLL_D, REVERSE );
@@ -72,7 +72,7 @@ PID PID_Yaw( &Yaw, &Throttle_Yaw, &SetPoint_Yaw, YAW_K, YAW_D, YAW_I, REVERSE );
 PID PIDs[ PIDCount ] = { PID_Pitch, PID_Roll };
 
 RF24 Radio( CE_PIN, CSN_PIN );
-#define RADIO_PIPE 0xE8E8F0F0E1LL
+#define RADIO_PIPE 0xABCDABCD71LL
 
 // [ 1, 2 ] [ 3, 4 ] = Left stick, right stick.
 byte Joystick[ 4 ];
@@ -91,6 +91,8 @@ float Joystick_Float[ 4 ];
 
 long LastRadioLoss;
 #define RadioLossPeriod 500
+
+float tFL, tFR, tRL, tRR;
 
 Propeller FL, FR, RL, RR;
 Propeller Props_CW[ ] = { FR, RL };
@@ -159,12 +161,12 @@ void UpdateThrottles( void )
 	Serial.println( Throttle_Yaw );
 #endif
 	float R = Throttle_Roll;
-	float Y = Throttle_Yaw / 255.0;
+	float Y = Throttle_Yaw;
 
-	float tFL = constrain( P + R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
-	float tFR = constrain( P - R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
-	float tRL = constrain( -P + R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
-	float tRR = constrain( -P - R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
+	tFL = constrain( P + R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
+	tFR = constrain( P - R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
+	tRL = constrain( -P + R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
+	tRR = constrain( -P - R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
 
 	tFL = constrain( tFL + Throttle, 0, ESC_MAX );
 	tFR = constrain( tFR + Throttle, 0, ESC_MAX );
@@ -220,7 +222,8 @@ void HandleRadio( void )
 	
 		Available = Radio.available( );
 	}
-
+	//byte Throttles[ ] = { byte( tFL * 255 ), byte( tFR * 255 ), byte( tRL * 255 ), byte( tRR * 255 ) };
+	//Radio.writeAckPayload( 1, &Throttles, sizeof( Throttles ) );
 	LastRadioLoss = millis( );
 	// Fetch the data payload
 	
@@ -290,6 +293,7 @@ void init_PIDs( void )
 void init_Radio( void )
 {
 	Radio.begin( );
+	//Radio.enableAckPayload( );
 	Radio.openReadingPipe( 1, RADIO_PIPE );
 	Radio.startListening( );
 }
