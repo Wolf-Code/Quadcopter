@@ -16,7 +16,7 @@
 #include "Propeller.h"
 #include "Gyroscope.h"
 
-#define PI 3.14159
+#define PI 3.141592
 #define RAD2DEG( Rads ) Rads * ( 180.0 / PI )
 #define DEG2RAD( Degs ) ( PI / 180.0 ) * Degs
 
@@ -38,15 +38,15 @@ double SetPoint_Pitch = 0.0;
 double SetPoint_Yaw = 0.0;
 double SetPoint_Roll = 0.0;
 
-#define PITCH_P 0.275
+#define PITCH_P 0.225
 #define PITCH_I 0.0
-#define PITCH_D 0.06
+#define PITCH_D 0.1
 
 #define ROLL_P 0.2
 #define ROLL_I 0.0
-#define ROLL_D 0.05
+#define ROLL_D 0.06
 
-#define YAW_P 0.3
+#define YAW_P 0.25
 #define YAW_I 0
 #define YAW_D 0
 
@@ -59,7 +59,7 @@ double SetPoint_Roll = 0.0;
 
 #define YAW_MAX DEG2RAD( 180.0 )
 #define YAW_MIN DEG2RAD( -180.0 )
-#define YAW_INFLUENCE 2
+#define YAW_INFLUENCE 0
 
 PID PID_Pitch( &Pitch, &Throttle_Pitch, &SetPoint_Pitch, PITCH_P, PITCH_I, PITCH_D, REVERSE );
 PID PID_Roll( &Roll, &Throttle_Roll, &SetPoint_Roll, ROLL_P, ROLL_I, ROLL_D, REVERSE );
@@ -80,8 +80,8 @@ float Joystick_Float[ 4 ];
 #define ESC_ARM_DELAY 3000
 #define THROTTLE_MIN 0.1
 
-//#define DEBUG
-//#define DEBUG_ANGLES
+#define DEBUG
+#define DEBUG_ANGLES
 //#define DEBUG_THROTTLE
 //#define DEBUG_JOYSTICKS
 //#define ESC_CALIBRATION
@@ -100,7 +100,7 @@ void setup( )
 {
 	
 #ifdef DEBUG
-	Serial.begin( 115200 );    // start serial at 9600 baud
+	Serial.begin( 115200 );
 	delay( 2000 );
 	Serial.println( "Props" );
 #endif
@@ -141,16 +141,6 @@ void loop( )
 void UpdateThrottles( void )
 {
 	float Throttle = Joystick_Float[ 3 ];
-
-	if ( Throttle <= THROTTLE_MIN )
-	{
-		FL.SetThrottle( 0 );
-		FR.SetThrottle( 0 );
-		RL.SetThrottle( 0 );
-		RR.SetThrottle( 0 );
-		return;
-	}
-
 	float P = Throttle_Pitch;
 #ifdef DEBUG_THROTTLE
 	Serial.println( Throttle_Pitch );
@@ -159,18 +149,6 @@ void UpdateThrottles( void )
 #endif
 	float R = Throttle_Roll;
 	float Y = Throttle_Yaw;
-
-	/*
-	tFL = constrain( P + R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
-	tFR = constrain( P - R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
-	tRL = constrain( -P + R - YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
-	tRR = constrain( -P - R + YAW_INFLUENCE * Y, 0, CORRECTION_MAX );
-
-	tFL = constrain( tFL + Throttle, 0, ESC_MAX );
-	tFR = constrain( tFR + Throttle, 0, ESC_MAX );
-	tRL = constrain( tRL + Throttle, 0, ESC_MAX );
-	tRR = constrain( tRR + Throttle, 0, ESC_MAX );
-	*/
 
 	float vCW = ( 1.0 - Y * YAW_INFLUENCE ) * Throttle;
 	float vCCW = ( 1.0 + Y * YAW_INFLUENCE ) * Throttle;
@@ -207,6 +185,14 @@ void UpdateThrottles( void )
 
 void UpdatePIDs( )
 {
+	if ( Joystick_Float[ 3 ] <= THROTTLE_MIN )
+	{
+		FL.SetThrottle( 0 );
+		FR.SetThrottle( 0 );
+		RL.SetThrottle( 0 );
+		RR.SetThrottle( 0 );
+		return;
+	}
 	bool Change = false;
 	for ( int Q = 0; Q < PIDCount; Q++ )
 		Change = PIDs[ Q ].Compute( ) || Change;
@@ -265,12 +251,20 @@ void SetGyroValues( void )
 	Roll = double( Gyro->GetRoll( ) );
 
 #ifdef DEBUG_ANGLES
-	Serial.print( "Pitch: " );
-	Serial.println( Pitch );
-	Serial.print( "Yaw: " );
-	Serial.println( Yaw );
-	Serial.print( "Roll: " );
-	Serial.println( Roll );
+	Serial.print( "Pitch: Rad: " );
+	Serial.print( Pitch );
+	Serial.print( ", Deg: " );
+	Serial.println( RAD2DEG( Pitch ) );
+
+	Serial.print( "Yaw: Rad: " );
+	Serial.print( Yaw );
+	Serial.print( ", Deg: " );
+	Serial.println( RAD2DEG( Yaw ) );
+	
+	Serial.print( "Roll: Rad: " );
+	Serial.print( Roll );
+	Serial.print( ", Deg: " );
+	Serial.println( RAD2DEG( Roll ) );
 	Serial.println( );
 #endif
 }
@@ -301,7 +295,7 @@ void init_PIDs( void )
 	{
 		PIDs[ Q ].SetMode( AUTOMATIC );
 		PIDs[ Q ].SetSampleTime( 25 );
-		PIDs[ Q ].SetOutputLimits( -255, 255 );
+		PIDs[ Q ].SetOutputLimits( -255.0, 255.0 );
 	}
 }
 
@@ -328,9 +322,4 @@ void init_Propellers( void )
 void init_Gyro( void )
 {
 	SetGyroValues( );
-}
-
-float Rad2Deg( float Rad )
-{
-	return Rad * PI;
 }
