@@ -9,11 +9,12 @@ http://arduino-info.wikispaces.com/Nrf24L01-2.4GHz-HowTo
 7 - MISO to Arduino pin 12
 8 - UNUSED*/
 
-#include <Joystick.h>
 #include <Input.h>
+#include <Joystick.h>
 #include <SPI.h>
 #include <nRF24L01.h>
 #include <RF24.h>
+#include <RF24_config.h>
 
 #define X_Left A3
 #define Y_Left A2
@@ -32,15 +33,14 @@ Joystick Left( X_Left, Y_Left, 6 ), Right( X_Right, Y_Right, 7 );
 RF24 radio( CE_PIN, CSN_PIN ); // Create a Radio
 byte joystick[ 4 ];  // 2 element array holding Joystick readings
 
-//#define DEBUG
+#define DEBUG
 
 void setup()
 {
 #ifdef DEBUG
 	Serial.begin( 115200 );
 #endif
-	init_Radio( );
-	pinMode( Y_Right, INPUT );
+	//init_Radio( );
 }
 
 void loop( )
@@ -52,10 +52,10 @@ void loop( )
 	joystick[ 2 ] = Right.X( );
 	joystick[ 3 ] = B;//Right.Y( );
 
-	radio.write( joystick, sizeof( joystick ) );
+	//radio.write( joystick, sizeof( joystick ) );
 
 #ifdef DEBUG
-	/*Serial.print( "Left:\tX=" );
+	Serial.print( "Left:\tX=" );
 	Serial.print( Left.X( ) );
 	Serial.print( ", Y=" );
 	Serial.println( Left.Y( ) );
@@ -63,7 +63,7 @@ void loop( )
 	Serial.print( "Right:\tX=" );
 	Serial.print( Right.X( ) );
 	Serial.print( ", Y=" );
-	Serial.println( Right.Y( ) );*/
+	Serial.println( Right.Y( ) );
 	Serial.println( B );
 #endif
 }
