@@ -1,0 +1,4 @@
+Input	KEYWORD1
+ReadBool	KEYWORD2
+ReadAnalog	KEYWORD2
+ReadAnalogFloat	KEYWORD2

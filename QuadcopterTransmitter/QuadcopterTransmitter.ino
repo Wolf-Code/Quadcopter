@@ -33,38 +33,37 @@ Joystick Left( X_Left, Y_Left, 6 ), Right( X_Right, Y_Right, 7 );
 RF24 radio( CE_PIN, CSN_PIN ); // Create a Radio
 byte joystick[ 4 ];  // 2 element array holding Joystick readings
 
-#define DEBUG
+//#define DEBUG
 
 void setup()
 {
 #ifdef DEBUG
 	Serial.begin( 115200 );
 #endif
-	//init_Radio( );
+	init_Radio( );
 }
 
 void loop( )
 {
 	byte B = map( analogRead( Y_Right ), 0, 1023, 0, 255 );
 	
-	joystick[ 0 ] = Left.X( );
-	joystick[ 1 ] = Left.Y( );
-	joystick[ 2 ] = Right.X( );
+	joystick[ 0 ] = Left.XByte( );
+	joystick[ 1 ] = Left.YByte( );
+	joystick[ 2 ] = Right.XByte( );
 	joystick[ 3 ] = B;//Right.Y( );
 
-	//radio.write( joystick, sizeof( joystick ) );
+	radio.write( joystick, sizeof( joystick ) );
 
 #ifdef DEBUG
 	Serial.print( "Left:\tX=" );
-	Serial.print( Left.X( ) );
+	Serial.print( joystick[ 0 ] );
 	Serial.print( ", Y=" );
-	Serial.println( Left.Y( ) );
+	Serial.println( joystick[ 1 ] );
 
 	Serial.print( "Right:\tX=" );
-	Serial.print( Right.X( ) );
+	Serial.print( joystick[ 2 ] );
 	Serial.print( ", Y=" );
-	Serial.println( Right.Y( ) );
-	Serial.println( B );
+	Serial.println( joystick[ 3 ] );
 #endif
 }
 

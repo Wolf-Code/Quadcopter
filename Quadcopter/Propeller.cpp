@@ -7,7 +7,6 @@ void Propeller::Attach( byte Pin )
 	this->Srv.attach( Pin );
 }
 
-
 void Propeller::SetThrottle( byte Amount )
 {
 	int Speed = map( Amount, 0, 255, Prop_Min, Prop_Max );
@@ -26,4 +25,5 @@ void Propeller::InitLow( void )
 
 Propeller::~Propeller( )
 {
+  this->Srv.detach( );
 }

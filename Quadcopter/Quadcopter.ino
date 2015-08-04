@@ -6,26 +6,31 @@
 #include <PID_v1.h>
 #include <Servo.h>
 
-// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
-// for both classes must be in the include path of your project
 #include <I2Cdev.h>
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
   #include <Wire.h>
 #endif
 
-//#include "MPU6050.h" // not necessary if using MotionApps include file
-
-// Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
-// is used in I2Cdev.h
-
 #include "MPU6050_6Axis_MotionApps20.h"
-
 #include "Propeller.h"
-
 
 #define PI 3.141592
 #define RAD2DEG( Rads ) Rads * ( 180.0 / PI )
 #define DEG2RAD( Degs ) ( PI / 180.0 ) * Degs
+
+//#define DEBUG
+//#define DEBUG_ANGLES
+//#define DEBUG_THROTTLE
+//#define DEBUG_JOYSTICKS
+//#define ESC_CALIBRATION
+
+#ifdef DEBUG
+	#define DEBUG_PRINT(x) Serial.print(x)
+	#define DEBUG_PRINTLN(x) Serial.println(x)
+#else
+	#define DEBUG_PRINT(x)
+	#define DEBUG_PRINTLN(x)
+#endif
 
 #define Pin_FL A0
 #define Pin_FR A1
@@ -36,14 +41,8 @@
 #define CSN_PIN 10
 
 double Pitch, Yaw, Roll;
-
-double Throttle_Pitch;
-double Throttle_Yaw;
-double Throttle_Roll;
-
-double SetPoint_Pitch = 0.0;
-double SetPoint_Yaw = 0.0;
-double SetPoint_Roll = 0.0;
+double Throttle_Pitch, Throttle_Yaw, Throttle_Roll;
+double SetPoint_Pitch = 0.0, SetPoint_Yaw = 0.0, SetPoint_Roll = 0.0;
 
 #define PITCH_P 0.225
 #define PITCH_I 0.0
@@ -62,7 +61,6 @@ double SetPoint_Roll = 0.0;
 
 #define ROLL_MAX DEG2RAD( 10.0 )
 #define ROLL_MIN DEG2RAD( -10.0 )
-
 
 #define YAW_MAX DEG2RAD( 180.0 )
 #define YAW_MIN DEG2RAD( -180.0 )
@@ -87,34 +85,23 @@ float Joystick_Float[ 4 ];
 #define ESC_ARM_DELAY 3000
 #define THROTTLE_MIN 0.1
 
-#define DEBUG
-#define DEBUG_ANGLES
-//#define DEBUG_THROTTLE
-//#define DEBUG_JOYSTICKS
-//#define ESC_CALIBRATION
-
 long LastRadioLoss;
 #define RadioLossPeriod 500
 
 float tFL, tFR, tRL, tRR;
-
 Propeller FL, FR, RL, RR;
-Propeller Props_CW[ ] = { FR, RL };
-Propeller Props_CCW[ ] = { FL, RR };
 
 MPU6050 mpu;
-// MPU control/status vars
-bool dmpReady;  // set true if DMP init was successful
-uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
-uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
-uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
-uint16_t fifoCount;     // count of all bytes currently in FIFO
-uint8_t fifoBuffer[ 64 ]; // FIFO storage buffer
+bool dmpReady;				// set true if DMP init was successful
+uint8_t mpuIntStatus;		// holds actual interrupt status byte from MPU
+uint8_t devStatus;			// return status after each device operation (0 = success, !0 = error)
+uint16_t packetSize;		// expected DMP packet size (default is 42 bytes)
+uint16_t fifoCount;			// count of all bytes currently in FIFO
+uint8_t fifoBuffer[ 64 ];	// FIFO storage buffer
 
-// orientation/motion vars
-Quaternion q;           // [w, x, y, z]         quaternion container
-VectorFloat gravity;    // [x, y, z]            gravity vector
-float ypr[ 3 ];         // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
+Quaternion q;				// [w, x, y, z]         quaternion container
+VectorFloat gravity;		// [x, y, z]            gravity vector
+float ypr[ 3 ];				// [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
 volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
 void dmpDataReady( )
@@ -122,39 +109,35 @@ void dmpDataReady( )
   mpuInterrupt = true;
 }
 
+void init_Propellers( void );
+void init_Radio( void );
+void init_PIDs( void );
+void init_MPU( void );
+void HandleRadio( void );
+void SetGyroValues( void );
+void UpdatePIDs( void );
+
 void setup( )
 {
 	
 #ifdef DEBUG
 	Serial.begin( 115200 );
 	delay( 2000 );
-	Serial.println( "Props" );
 #endif
 
+	DEBUG_PRINTLN( "Props" );
 	init_Propellers( );
 
-#ifdef DEBUG
-	Serial.println( "Radio" );
-#endif
-
+	DEBUG_PRINTLN( "Radio" );
 	init_Radio( );
 
-#ifdef DEBUG
-	Serial.println( "PID" );
-#endif
-
+	DEBUG_PRINTLN( "PID" );
 	init_PIDs( );
 
-#ifdef DEBUG
-	Serial.println( "Gyro" );
-#endif
-
+	DEBUG_PRINTLN( "Gyro" );
 	init_MPU( );
 
-#ifdef DEBUG
-	Serial.println( "Done" );
-#endif
-
+	DEBUG_PRINTLN( "Done" );
 }
 
 void loop( )
@@ -167,30 +150,26 @@ void loop( )
 void UpdateThrottles( void )
 {
 	float Throttle = Joystick_Float[ 3 ];
-	float P = Throttle_Pitch;
-#ifdef DEBUG_THROTTLE
-	Serial.println( Throttle_Pitch );
-	Serial.println( Throttle_Yaw );
-	Serial.println( Throttle_Roll );
-#endif
-	float R = Throttle_Roll;
-	float Y = Throttle_Yaw;
 
-	float vCW = ( 1.0 - Y * YAW_INFLUENCE ) * Throttle;
-	float vCCW = ( 1.0 + Y * YAW_INFLUENCE ) * Throttle;
+	DEBUG_PRINTLN( Throttle_Pitch );
+	DEBUG_PRINTLN( Throttle_Yaw );
+	DEBUG_PRINTLN( Throttle_Roll );
+
+	float vCW = ( 1.0 - Throttle_Yaw * YAW_INFLUENCE ) * Throttle;
+	float vCCW = ( 1.0 + Throttle_Yaw * YAW_INFLUENCE ) * Throttle;
 
 #ifdef DEBUG_THROTTLE
-	Serial.print( "CW:\t" );
-	Serial.println( vCW );
-	Serial.print( "CCW:\t" );
-	Serial.println( vCCW );
+	DEBUG_PRINT( "CW:\t" );
+	DEBUG_PRINTLN( vCW );
+	DEBUG_PRINT( "CCW:\t" );
+	DEBUG_PRINTLN( vCCW );
 #endif
 
-	tFL = ( 1.0 + ( P + R ) ) * vCW;
-	tRR = ( 1.0 + ( -P - R ) ) * vCW;
+	tFL = ( 1.0 + ( Throttle_Pitch + Throttle_Roll ) ) * vCW;
+	tRR = ( 1.0 + ( -Throttle_Pitch - Throttle_Roll ) ) * vCW;
 
-	tFR = ( 1.0 + ( P - R ) ) * vCCW;
-	tRL = ( 1.0 + ( -P + R ) ) * vCCW;
+	tFR = ( 1.0 + ( Throttle_Pitch - Throttle_Roll ) ) * vCCW;
+	tRL = ( 1.0 + ( -Throttle_Pitch + Throttle_Roll ) ) * vCCW;
 
 	FL.SetThrottle( byte( constrain( tFL, 0.0, 1.0 ) * 255 ) );
 	FR.SetThrottle( byte( constrain( tFR, 0.0, 1.0 ) * 255 ) );
@@ -249,10 +228,7 @@ void HandleRadio( void )
 	
 		Available = Radio.available( );
 	}
-	//byte Throttles[ ] = { byte( tFL * 255 ), byte( tFR * 255 ), byte( tRL * 255 ), byte( tRR * 255 ) };
-	//Radio.writeAckPayload( 1, &Throttles, sizeof( Throttles ) );
 	LastRadioLoss = millis( );
-	// Fetch the data payload
 	
 
 #ifdef DEBUG_JOYSTICKS
@@ -299,9 +275,7 @@ void SetGyroValues( void )
   {
     // reset so we can continue cleanly
     mpu.resetFIFO( );
-#ifdef DEBUG
-    Serial.println( F( "FIFO overflow!" ) );
-#endif
+	  DEBUG_PRINTLN( F( "FIFO overflow!" ) );
 
     // otherwise, check for DMP data ready interrupt (this should happen frequently)
   }
@@ -355,27 +329,20 @@ void init_MPU( void )
     Fastwire::setup( 400, true );
   #endif
   
-  #ifdef DEBUG
-    Serial.println( "Passed #if" );
-  #endif
+
+	DEBUG_PRINTLN( "Passed #if" );
     mpu.initialize( );
-  #ifdef DEBUG
-    Serial.println( "Passed mpu initialize" );
-  #endif
+	DEBUG_PRINTLN( "Passed mpu initialize" );
     devStatus = mpu.dmpInitialize( );
-  #ifdef DEBUG
-    Serial.println( "Passed devstatus" );
-  #endif
+	DEBUG_PRINTLN( "Passed devstatus" );
   
     // supply your own gyro offsets here, scaled for min sensitivity
     mpu.setXGyroOffset( 0 );
     mpu.setYGyroOffset( 0 );
     mpu.setZGyroOffset( 0 );
     mpu.setZAccelOffset( 1688 ); // 1688 factory default for my test chip
-  
-  #ifdef DEBUG
-    Serial.println( "Passed offsets" );
-  #endif
+
+	DEBUG_PRINTLN( "Passed offsets" );
     // make sure it worked (returns 0 if so)
     if ( devStatus == 0 )
     {
@@ -386,6 +353,7 @@ void init_MPU( void )
   
       dmpReady = true;
       packetSize = mpu.dmpGetFIFOPacketSize( );
+	    DEBUG_PRINTLN( "Passed dev status check" );
     }
 }
 
